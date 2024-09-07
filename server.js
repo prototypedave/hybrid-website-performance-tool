@@ -4,6 +4,8 @@ import mongoose from 'mongoose';
 import { format } from 'date-fns';
 import { createBrowser, createReportWithBrowser } from './performance-tool/lighthouse-util.js';
 import { Report, Rep } from './performance-tool/model.js';
+import { PingReport, Traceroute } from './network-tool/model.js';
+import { performPing, performSSLCheck, traceRoute } from './network-tool/service.js';
 
 const app = express();
 const port = 3000;
@@ -97,6 +99,8 @@ async function processUrl(url) {
     const browser = await createBrowser();
     try {
         await createReportWithBrowser(browser, url, { output: 'html' });
+        await performPing(url);
+        await traceRoute(url);
         console.log(`[${getCurrentTime()}] Report generated for ${url}`);
     } catch (error) {
         console.error(`[${getCurrentTime()}] Failed to create report for ${url}:`, error);
@@ -138,9 +142,8 @@ async function processContinuousQueue() {
         }
         const url = continuousQueue.shift();
         await processUrl(url);
-        //await removeFromContinuousQueue(url); 
+        await removeFromContinuousQueue(url); 
     }
-
     isProcessingContinuous = false;
 }
 
@@ -196,7 +199,7 @@ app.post('/add-url', async (req, res) => {
     res.status(200).send(`Added ${url} to the queue.`);
 });
 
-// Endpoint to manually trigger URL processing
+
 app.post('/run-reports', (req, res) => {
     if (immediateQueue.length === 0 && continuousQueue.length === 0) {
         return res.status(200).send('No URLs in the queues.');
@@ -268,4 +271,99 @@ app.get('/report/:url', async (req, res) => {
     }
 });
 
+// Fetch ping
+app.get('/ping/:url', async (req, res) => {
+    const { url } = req.params;
+    try {
+        const report = await PingReport.findOne({ url }).exec();
+        if (report) {
+            return res.json(report);
+        } else {
+            res.status(404).send('Report not found');
+        }
+    } catch (error) {
+        console.error(`Error fetching report [${url}]:`, error);
+        res.status(500).send('Internal Server Error');
+    }
+});
 
+// Fetch trace data 
+app.get('/trace/:url', async (req, res) => {
+    const { url } = req.params;
+    try {
+        const report = await Traceroute.findOne({ url }).exec();
+        if (report) {
+            return res.json(report);
+        } else {
+            res.status(404).send('Report not found');
+        }
+    } catch (error) {
+        console.error(`Error fetching report [${url}]:`, error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+// fetch SSL certificate
+app.get('/SSL/:url', async (req, res) => {
+    const { url } = req.params;
+    try {
+        const report = await performSSLCheck(url);
+        if (report) {
+            return res.json(report);
+        } else {
+            res.status(404).send('Report not found');
+        }
+    } catch (error) {
+        console.error(`Error fetching report [${url}]:`, error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+app.get('/coord/:url', async (req, res) => {
+    const { url } = req.params;
+    try {
+        const report = await Traceroute.findOne({ url }).exec();
+        if (report) {
+            // Extract IP addresses from the report
+            const hops = report.tracerouteData;
+            
+            // Create promises to get coordinates for each IP address
+            const coordinatePromises = hops.map(async (hop) => {
+                const { ipAddress } = hop;
+                
+                if (isPrivateIP(ipAddress)) {
+                    // Return null coordinates for private IP addresses
+                    return [null, null];
+                }
+                
+                try {
+                    const { coordinates } = await getCoordinates(ipAddress);
+                    return coordinates ? [coordinates.latitude, coordinates.longitude] : [null, null];
+                } catch (error) {
+                    // Log error if needed
+                    console.error(`Error fetching coordinates for IP ${ipAddress}:`, error.message);
+                    return [null, null]; // Return default coordinates on error
+                }
+            });
+
+            // Wait for all coordinate lookups to complete
+            const coordinatesList = await Promise.all(coordinatePromises);
+            return res.json(coordinatesList); // Return the list of coordinates
+        } else {
+            res.status(404).send('Report not found');
+        }
+    } catch (error) {
+        console.error(`Error fetching report [${url}]:`, error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+
+const isPrivateIP = (ip) => {
+    const parts = ip.split('.').map(Number);
+    return (
+        (parts[0] === 10) ||
+        (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+        (parts[0] === 192 && parts[1] === 168)
+    );
+};
