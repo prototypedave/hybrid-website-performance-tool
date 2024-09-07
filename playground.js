@@ -1,27 +1,32 @@
 import { createBrowser, createReportWithBrowser } from "./lighthouse-util.js";
-import fs from "fs";
-import Assert from "assert";
 
 (async () => {
-  
-  const browser = await createBrowser();
-  
-  const result = await createReportWithBrowser(
-    browser,
-    "https://example.com",
-    {
-        output: "html"  
+  const urls = ["https://example.com", "https://youtube.com", "https://google.com"]; // Add your URLs here
+
+  for (const url of urls) {
+    const browser = await createBrowser(); // Create a new browser instance for each URL
+    try {
+      const metrics = await createReportWithBrowser(
+        browser,
+        url,
+        {
+          output: "html"  // Optionally save output type, but it's unused here
+        }
+      );
+
+      // Log the metrics instead of report
+      console.log(`Metrics for ${url}:`, metrics);
+
+    } catch (error) {
+      console.error(`Failed to create report for ${url}:`, error);
+    } finally {
+      await browser.close(); // Ensure the browser is closed for each instance
     }
-  );
+  }
 
-  Assert(result.report, "No report returned");
-
-  console.log(result.report);
-  
-  await browser.close();
 })()
-    // Catch anything that went wrong!
-    .catch(console.error)
-    .then(() => {
-       console.log("Finished!");
-});
+  // Catch anything that went wrong!
+  .catch(console.error)
+  .then(() => {
+     console.log("Finished!");
+  });
