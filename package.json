@@ -1,0 +1,19 @@
+{
+  "name": "website-tool",
+  "version": "1.0.0",
+  "description": "A tool that combines lighthouse tool, network metrics (ping, traceroute & openssl, zaproxy tool to diagnose a website performance",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "David Isumba",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2",
+    "leveldown": "^6.1.1",
+    "levelup": "^5.1.1",
+    "lighthouse": "^12.2.1",
+    "puppeteer": "^23.3.0"
+  }
+}
