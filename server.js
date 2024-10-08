@@ -6,12 +6,15 @@ import { createBrowser, createReportWithBrowser } from './performance-tool/light
 import { Report, Rep } from './performance-tool/model.js';
 import { PingReport, Traceroute } from './network-tool/model.js';
 import { performPing, performSSLCheck, traceRoute } from './network-tool/service.js';
+import { Security } from './security-tool/model.js';
+import { SecurityScan } from './security-tool/security.js';
+import cors from 'cors';
 
 const app = express();
-const port = 3000;
+const port = 8080;
 app.use(express.json());
+app.use(cors());
 
-// MongoDB setup
 const mongoUri = 'mongodb://localhost:27017';
 const client = new MongoClient(mongoUri, {});
 const dbName = 'lighthouseQueueDB';
@@ -46,18 +49,15 @@ async function saveToContinuousQueue(url) {
     try {
         const db = client.db(dbName);
         const collection = db.collection(collectionName);
-        
-        // Check if URL already exists in the collection
         const existing = await collection.findOne({ url });
         if (existing) {
-            console.log(`[${getCurrentTime()}] URL ${url} already exists in database.`);
+            console.log(`[${getCurrentTime()}] URL ${url} already exists in the continuous queue database.`);
             return;
         }
-        
         await collection.insertOne({ url, addedAt: new Date() });
-        console.log(`[${getCurrentTime()}] Saved ${url} to database.`);
+        console.log(`[${getCurrentTime()}] Saved ${url} to continuous queue database.`);
     } catch (error) {
-        console.error(`[${getCurrentTime()}] Failed to save to MongoDB`, error);
+        console.error(`[${getCurrentTime()}] Failed to save URL to MongoDB`, error);
     }
 }
 
@@ -68,7 +68,7 @@ async function retrieveContinuousQueue() {
         const urls = await collection.find().sort({ addedAt: 1 }).toArray();
         return urls.map(doc => doc.url);
     } catch (error) {
-        console.error(`[${getCurrentTime()}] Failed to retrieve from MongoDB`, error);
+        console.error(`[${getCurrentTime()}] Failed to retrieve continuous queue from MongoDB`, error);
         return [];
     }
 }
@@ -78,8 +78,9 @@ async function removeFromContinuousQueue(url) {
         const db = client.db(dbName);
         const collection = db.collection(collectionName);
         await collection.deleteOne({ url });
+        console.log(`[${getCurrentTime()}] Removed ${url} from continuous queue database.`);
     } catch (error) {
-        console.error(`[${getCurrentTime()}] Failed to remove from MongoDB`, error);
+        console.error(`[${getCurrentTime()}] Failed to remove URL from MongoDB`, error);
     }
 }
 
@@ -89,18 +90,17 @@ let isProcessingImmediate = false;
 let isProcessingContinuous = false;
 let isProcessingNewUrl = false;
 
-// format date and time
 function getCurrentTime() {
     return format(new Date(), 'MM/dd/yyyy hh:mm:ss a');
 }
 
-// process urls
 async function processUrl(url) {
     const browser = await createBrowser();
     try {
         await createReportWithBrowser(browser, url, { output: 'html' });
         await performPing(url);
         await traceRoute(url);
+        await SecurityScan(url);
         console.log(`[${getCurrentTime()}] Report generated for ${url}`);
     } catch (error) {
         console.error(`[${getCurrentTime()}] Failed to create report for ${url}:`, error);
@@ -109,96 +109,94 @@ async function processUrl(url) {
     }
 }
 
-// process new urls
 async function processImmediateQueue() {
     isProcessingImmediate = true;
-
     while (immediateQueue.length > 0) {
         const url = immediateQueue.shift();
         await processUrl(url);
-        continuousQueue.unshift(url); 
-        await saveToContinuousQueue(url); 
+        continuousQueue.unshift(url);
+        await saveToContinuousQueue(url);
     }
-
     isProcessingImmediate = false;
-
     if (isProcessingNewUrl) {
         isProcessingNewUrl = false;
-        processContinuousQueue().catch(error => {
-            console.error(`[${getCurrentTime()}] Error during continuous queue processing:`, error);
-        });
+        processContinuousQueue().catch(error => console.error(`[${getCurrentTime()}] Error processing continuous queue:`, error));
     }
 }
 
-// process saved urls
 async function processContinuousQueue() {
     isProcessingContinuous = true;
-
     while (continuousQueue.length > 0) {
         if (immediateQueue.length > 0 && isProcessingImmediate) {
-            // Pause continuous processing if a new URL is being processed
             isProcessingNewUrl = true;
             break;
         }
         const url = continuousQueue.shift();
         await processUrl(url);
-        await removeFromContinuousQueue(url); 
+        await removeFromContinuousQueue(url);
     }
     isProcessingContinuous = false;
 }
 
-// Schedule continuous processing every 5 minutes
-const interval = 5 * 60 * 1000; // 5 minutes in milliseconds
+async function initializeQueueFromDb() {
+    const savedUrls = await retrieveContinuousQueue();
+    continuousQueue = [...savedUrls];
+    console.log(`[${getCurrentTime()}] Loaded ${savedUrls.length} URLs from MongoDB into the continuous queue.`);
+}
+
+const interval = 5 * 60 * 1000;
 setInterval(() => {
     if (continuousQueue.length > 0 && !isProcessingContinuous && !isProcessingImmediate) {
-        processContinuousQueue().catch(error => {
-            console.error(`[${getCurrentTime()}] Error during continuous queue processing:`, error);
-        });
+        processContinuousQueue().catch(error => console.error(`[${getCurrentTime()}] Error processing continuous queue:`, error));
     }
 }, interval);
 
-// Endpoint to add a new URL to the queue
-app.post('/add-url', async (req, res) => {
-    const { url } = req.body;
-
-    if (!url) {
-        return res.status(400).send('URL is required.');
+app.post('/report', express.json(), async (request, response, next) => {
+    if (!Array.isArray(request.body)) {
+        console.error('Bad request: Expected an array');
+        return response.sendStatus(400);
     }
 
-    // Check if the URL is already in the database
-    if ((await retrieveContinuousQueue()).includes(url)) {
-        return res.status(409).send('URL has already been added.');
+    try {
+        const { immediateQueue, continuousQueue, retrieveContinuousQueue, saveToContinuousQueue, isProcessingContinuous, isProcessingImmediate, processImmediateQueue, getCurrentTime } = request.app.locals;
+
+        // Loop through the URLs provided in the request body
+        const identifiers = await Promise.all(
+            request.body.map(async ({ url, options }) => {
+                assert(typeof url === 'string', 'Expected url to be provided');
+
+                // Retrieve all the current URLs in the queues
+                const allQueueUrls = [...immediateQueue, ...continuousQueue, ...(await retrieveContinuousQueue())];
+
+                // Check if the URL is already in the queue
+                if (!allQueueUrls.includes(url)) {
+                    // If processing is happening, add to continuous queue, otherwise immediate queue
+                    if (isProcessingContinuous) {
+                        continuousQueue.unshift(url);
+                        console.log(`[${getCurrentTime()}] Added ${url} to the top of the continuous queue.`);
+                    } else {
+                        immediateQueue.push(url);
+                        console.log(`[${getCurrentTime()}] Added ${url} to the immediate queue.`);
+                        // Trigger immediate queue processing if not already happening
+                        if (!isProcessingImmediate) {
+                            processImmediateQueue().catch(error => console.error(`[${getCurrentTime()}] Error processing immediate queue:`, error));
+                        }
+                    }
+                    await saveToContinuousQueue(url);
+                }
+            })
+        );
+
+        // Return the URL and identifier for each successfully processed URL
+        response.send(identifiers);
+    } catch (error) {
+        console.error('Error processing request:', error);
+        next(error);
     }
-
-    // Check if the URL is in the immediate queue
-    if (immediateQueue.includes(url)) {
-        return res.status(409).send('URL is already in the immediate queue.');
-    }
-
-    if (isProcessingContinuous) {
-        // Add new URL to the top of the continuous queue
-        continuousQueue.unshift(url); 
-        console.log(`[${getCurrentTime()}] Added ${url} to the top of the continuous queue.`);
-    } else {
-        // Add new URL to the immediate queue
-        immediateQueue.push(url);
-        console.log(`[${getCurrentTime()}] Added ${url} to the immediate queue.`);
-        
-        // If not processing immediately, trigger immediate processing
-        if (!isProcessingImmediate) {
-            console.log(`[${getCurrentTime()}] Starting immediate processing of the queue...`);
-            processImmediateQueue().catch(error => {
-                console.error(`[${getCurrentTime()}] Error during immediate processing:`, error);
-            });
-        }
-    }
-
-    // Save the new URL to MongoDB
-    await saveToContinuousQueue(url);
-
-    res.status(200).send(`Added ${url} to the queue.`);
 });
 
+
+initializeQueueFromDb().catch(error => console.error(`[${getCurrentTime()}] Failed to initialize continuous queue from database:`, error));
 
 app.post('/run-reports', (req, res) => {
     if (immediateQueue.length === 0 && continuousQueue.length === 0) {
@@ -219,21 +217,6 @@ app.post('/run-reports', (req, res) => {
         res.status(200).send('Already processing the queues.');
     }
 });
-
-// Initialize queues from MongoDB on server start
-async function initializeQueues() {
-    const savedUrls = await retrieveContinuousQueue();
-    continuousQueue = savedUrls;
-    console.log(`[${getCurrentTime()}] Initialized continuous queue from MongoDB.`);
-    if (continuousQueue.length > 0) {
-        console.log(`[${getCurrentTime()}] Starting initial processing of the continuous queue...`);
-        processContinuousQueue().catch(error => {
-            console.error(`[${getCurrentTime()}] Error during initial continuous queue processing:`, error);
-        });
-    }
-}
-
-initializeQueues();
 
 // Start the server
 app.listen(port, () => {
@@ -367,3 +350,19 @@ const isPrivateIP = (ip) => {
         (parts[0] === 192 && parts[1] === 168)
     );
 };
+
+app.get('/security/:url', async (req, res) => {
+    const { url } = req.params;
+    try {
+        const report = await Security.findOne({ url }).exec();
+        if (report) {
+            return res.json(report); 
+        } else {
+            res.status(404).send('Report not found');
+        }
+    } catch (error) {
+        console.error(`Error fetching report [${url}]:`, error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+

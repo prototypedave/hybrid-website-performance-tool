@@ -1,7 +1,6 @@
 import ping from 'ping';
-import { handleMongoSave, handlePingSave, PingReport } from './model';
+import { handleMongoSave, handlePingSave, PingReport, Traceroute } from './model.js';
 import { exec } from "child_process";
-import { Traceroute } from './schemas.js';
 import { IPinfoWrapper } from "node-ipinfo";
 
 const ipinfo = new IPinfoWrapper("69a7f3d8d38d29");
