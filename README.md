@@ -104,8 +104,8 @@ Contributions are welcome! If you’d like to contribute, please fork the reposi
 
 ### Steps to Contribute
 
-    1. Fork the repository.
-    2. Create your feature branch:
+1. Fork the repository.
+2. Create your feature branch:
 
     ```bash
         git checkout -b feature/YourFeature
