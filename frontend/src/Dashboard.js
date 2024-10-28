@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar.js';
 import axios from 'axios';
 import { Card } from '@tremor/react';
-import io from 'socket.io-client'; // Import socket.io-client
+import io from 'socket.io-client'; 
 import { 
     Heatmap, 
     LineChart, 
@@ -37,7 +37,7 @@ function Dashboard() {
   const socket = useRef(null);
 
   useEffect(() => {
-    socket.current = io('http://localhost:8080'); // Update Socket.io URL
+    socket.current = io('http://localhost:8080'); 
     
     // Listen for WebSocket events
     socket.current.on('reportGenerated', (data) => {
