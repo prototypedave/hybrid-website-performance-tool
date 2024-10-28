@@ -12,3 +12,24 @@ The **Hybrid Website Performance Tool** is a web application built using the MER
 - **RESTful API**: Backend services powered by Express and Node.js to handle requests and responses.
 - **Multi-URL Testing**: Analyze multiple URLs simultaneously for comparative performance analysis.
 - **Custom Reports**: Generate detailed performance reports that can be downloaded for offline analysis.
+
+## Technologies Used
+
+- **Frontend**: 
+  - React
+  - Tailwind CSS
+  - Axios (for HTTP requests)
+  - Tremor
+  
+- **Backend**: 
+  - Node.js
+  - Express.js
+  - MongoDB (with Mongoose)
+  - Lighthouse
+  - Puppeteer
+  - Zaproxy
+
+- **DevOps**:
+  - Git
+  - GitHub (for version control)
+  - AWS (for deployment)
