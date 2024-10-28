@@ -42,7 +42,6 @@ The **Hybrid Website Performance Tool** is a web application built using the MER
 - MongoDB server running locally or access to a MongoDB Atlas account.
 
 ### Clone the Repository
-
     ```bash
     git clone https://github.com/prototypedave/hybrid-website-performance-tool.git
     cd hybrid-website-performance-tool
@@ -52,7 +51,7 @@ The **Hybrid Website Performance Tool** is a web application built using the MER
 
 Navigate to both the frontend and backend directories and install the required dependencies.
 
-    ```bash
+```bash
     # For the backend
     cd backend
     npm install
@@ -60,4 +59,4 @@ Navigate to both the frontend and backend directories and install the required d
     # For the frontend
     cd ../frontend
     npm install
-    ```
+```
