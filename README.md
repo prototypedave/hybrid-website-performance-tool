@@ -33,3 +33,17 @@ The **Hybrid Website Performance Tool** is a web application built using the MER
   - Git
   - GitHub (for version control)
   - AWS (for deployment)
+
+  ## Installation
+
+### Prerequisites
+
+- Node.js and npm installed on your machine.
+- MongoDB server running locally or access to a MongoDB Atlas account.
+
+### Clone the Repository
+
+```bash
+git clone https://github.com/prototypedave/hybrid-website-performance-tool.git
+cd hybrid-website-performance-tool
+```
