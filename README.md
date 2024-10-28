@@ -34,7 +34,7 @@ The **Hybrid Website Performance Tool** is a web application built using the MER
   - GitHub (for version control)
   - AWS (for deployment)
 
-  ## Installation
+## Installation
 
 ### Prerequisites
 
@@ -46,4 +46,18 @@ The **Hybrid Website Performance Tool** is a web application built using the MER
 ```bash
 git clone https://github.com/prototypedave/hybrid-website-performance-tool.git
 cd hybrid-website-performance-tool
+```
+
+## Install Dependencies
+
+Navigate to both the frontend and backend directories and install the required dependencies.
+
+```bash
+# For the backend
+cd backend
+npm install
+
+# For the frontend
+cd ../frontend
+npm install
 ```
