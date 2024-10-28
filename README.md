@@ -104,26 +104,17 @@ Contributions are welcome! If you’d like to contribute, please fork the reposi
 
 ### Steps to Contribute
 
-1. Fork the repository.
-2. Create your feature branch:
+    # Fork the repository.
+    # Create your feature branch:
+    git checkout -b feature/YourFeature
+    
+    # Commit your changes
+    git commit -m 'Add some feature'
 
-    ```bash
-        git checkout -b feature/YourFeature
-    ```
+    # Push to the branch
+    git push origin feature/YourFeature
 
-    3. Commit your changes
-
-    ```bash
-        git commit -m 'Add some feature'
-    ```
-
-    4. Push to the branch
-
-    ```bash
-        git push origin feature/YourFeature
-    ```
-
-    5. Open a pull request.
+    # Open a pull request.
 
 ## License
 
