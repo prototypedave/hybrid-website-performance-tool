@@ -14,7 +14,7 @@ describe('App Component', () => {
     renderWithRouter(<App />);
     
     // Check if the Home component is rendered
-    const homeElement = screen.getByText(/Home/i); 
+    const homeElement = screen.getByText(/hybrid/i); 
     expect(homeElement).toBeInTheDocument();
   });
 

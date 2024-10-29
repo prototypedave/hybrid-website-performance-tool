@@ -1,6 +1,6 @@
 import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
-import { BellIcon } from '@heroicons/react/24/outline'; // Import BellIcon
+import { BellIcon } from '@heroicons/react/24/outline'; 
 import React from 'react';
 
 const loggedInNavigation = [
@@ -9,8 +9,8 @@ const loggedInNavigation = [
 ];
   
 const loggedOutNavigation = [
-    { name: 'Features', href: '#', current: false },
-    { name: 'Pricing', href: '#', current: false },
+    { name: 'Features', href: '/features', current: false },
+    { name: 'Pricing', href: '/pricing', current: false },
     { name: 'Try it for free', href: '#', current: false },
 ];
 

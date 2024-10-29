@@ -1,4 +1,4 @@
-export default function AdSection() {
+export function WelcomeSection() {
     return (
       <div className="bg-white">
         <div className="mx-auto max-w-7xl py-6 sm:px-6 sm:py-6 lg:px-8">
@@ -48,4 +48,4 @@ export default function AdSection() {
         </div>
       </div>
     )
-  }
+}
