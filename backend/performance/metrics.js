@@ -1,95 +1,113 @@
 import { launch } from 'chrome-launcher';
 import lighthouse from 'lighthouse';
-import { performanceMetrics } from '../db/performance.js';
+import puppeteer from 'puppeteer';
+import pRetry from 'p-retry'; // Retry logic for failed URLs
+import { performanceMetrics } from '../db/performance.js'; // MongoDB model
 
-const BATCH_SIZE = 50; 
-const CONCURRENCY_LIMIT = 5; 
-const urls = ['https://example.com', 'https://google.com']; 
+// Constants
+const BATCH_SIZE = 100;
+const urls = [
+    'https://example.com',
+    'https://google.com',
+    'https://facebook.com',
+    'https://twitter.com',
+    'https://linkedin.com',
+];
 
-// Function to run Lighthouse for a URL and return metrics
-async function runLighthouse(url, chrome) {
+// Function to run Lighthouse on a single URL using a shared Chrome instance
+async function runLighthouse(url, browser) {
+    const { port } = new URL(browser.wsEndpoint());
     const options = {
         logLevel: 'error',
         output: 'json',
         onlyCategories: ['performance'],
-        port: chrome.port,
+        port,
     };
 
     try {
         const runnerResult = await lighthouse(url, options);
         const audits = runnerResult.lhr.audits;
 
-        const metrics = {
-            pageLoadTime: audits['speed-index']?.numericValue ?? 'N/A',
-            webVitals: {
-                lcp: audits['largest-contentful-paint']?.numericValue ?? 'N/A',
-                fid: audits['max-potential-fid']?.numericValue ?? 'N/A',
-                cls: audits['cumulative-layout-shift']?.numericValue ?? 'N/A',
-                fcp: audits['first-contentful-paint']?.numericValue ?? 'N/A',
-                tbt: audits['total-blocking-time']?.numericValue ?? 'N/A',
+        return {
+            url,
+            metrics: {
+                pageLoadTime: audits['speed-index']?.numericValue ?? 'N/A',
+                webVitals: {
+                    lcp: audits['largest-contentful-paint']?.numericValue ?? 'N/A',
+                    fid: audits['max-potential-fid']?.numericValue ?? 'N/A',
+                    cls: audits['cumulative-layout-shift']?.numericValue ?? 'N/A',
+                    fcp: audits['first-contentful-paint']?.numericValue ?? 'N/A',
+                    tbt: audits['total-blocking-time']?.numericValue ?? 'N/A',
+                },
+                serverResponseTime: audits['server-response-time']?.numericValue ?? 'N/A',
+                ttfb: audits['bootup-time']?.numericValue ?? 'N/A',
+                totalPageWeight: audits['total-byte-weight']?.numericValue ?? 'N/A',
+                httpRequests: audits['network-requests']?.details?.items?.length ?? 'N/A',
             },
-            serverResponseTime: audits['server-response-time']?.numericValue ?? 'N/A',
-            ttfb: audits['bootup-time']?.numericValue ?? 'N/A',
-            totalPageWeight: audits['total-byte-weight']?.numericValue ?? 'N/A',
-            httpRequests: audits['network-requests']?.details?.items?.length ?? 'N/A',
         };
-
-        return { url, metrics };
     } catch (error) {
-        console.error(`Error running Lighthouse for ${url}:`, error);
-        return null;
+        console.error(`Error running Lighthouse for ${url}:`, error.message);
+        throw error; // Rethrow for retry logic
     }
 }
 
-// Function to process URLs in batches concurrently
-async function processUrlsInBatches(urls) {
-    let chrome;
+// Function to process URLs sequentially (one at a time)
+async function processUrlsSequentially(urls, browser) {
+    const results = [];
+    for (const url of urls) {
+        try {
+            const result = await pRetry(() => runLighthouse(url, browser), {
+                retries: 3, // Retry up to 3 times
+                onFailedAttempt: (error) => {
+                    console.warn(`Retrying ${url} (${error.attemptNumber} attempt): ${error.message}`);
+                },
+            });
+            results.push(result);
+        } catch (error) {
+            console.error(`Failed to process URL ${url}:`, error.message);
+        }
+    }
+    return results;
+}
+
+// Function to save metrics to MongoDB in batches
+async function saveMetricsToDb(metricsBatch) {
     try {
-        chrome = await launch({ chromeFlags: ['--headless'] });
-
-        let batch = [];
-        let results = [];
-
-        for (let i = 0; i < urls.length; i++) {
-            batch.push(runLighthouse(urls[i], chrome));
-
-            // If batch reaches the limit, wait for all promises to resolve
-            if (batch.length >= BATCH_SIZE || i === urls.length - 1) {
-                const batchResults = await Promise.all(batch);
-                results = results.concat(batchResults.filter(result => result !== null)); // Filter out any failed results
-                batch = []; // Reset the batch
-            }
-
-            // Throttle the number of concurrent Lighthouse processes
-            if (i % CONCURRENCY_LIMIT === 0 && i > 0) {
-                console.log(`Pausing for a short time to throttle concurrency...`);
-                await new Promise(resolve => setTimeout(resolve, 5000)); 
-            }
-        }
-
-        // Bulk insert into database
-        if (results.length > 0) {
-            await performanceMetrics.insertMany(results.map(result => ({
-                url: result.url,
-                metrics: result.metrics,
-                collectedAt: new Date(),
-            })));
-            console.log(`Saved ${results.length} metrics records to MongoDB.`);
-        }
+        await performanceMetrics.insertMany(metricsBatch, { ordered: false }); // Bulk insert
+        console.log(`Saved ${metricsBatch.length} metrics to MongoDB.`);
     } catch (error) {
-        console.error('Error processing URLs:', error);
-    } finally {
-        if (chrome) {
-            await chrome.kill();
-        }
+        console.error(`Error saving metrics to MongoDB:`, error.message);
     }
 }
 
-async function runLighthousePeriodically() {
-    setInterval(async () => {
-        console.log('Running Lighthouse for URLs...');
-        await processUrlsInBatches(urls);
-    }, 10 * 60 * 1000); 
+// Function to execute Lighthouse runs and save results
+async function executeLighthouseProcess() {
+    const browser = await puppeteer.launch({ headless: true }); // Shared Chrome instance
+
+    try {
+        console.log('Starting Lighthouse process...');
+        for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+            const batchUrls = urls.slice(i, i + BATCH_SIZE); // Process in batches
+            console.log(`Processing batch ${i / BATCH_SIZE + 1} (${batchUrls.length} URLs)...`);
+
+            const metrics = await processUrlsSequentially(batchUrls, browser); // Process URLs one at a time in batch
+            await saveMetricsToDb(metrics); // Save results to MongoDB
+        }
+
+        console.log('All URLs processed successfully.');
+    } catch (error) {
+        console.error('Error during processing:', error.message);
+    } finally {
+        await browser.close(); // Close shared Chrome instance
+    }
 }
 
-runLighthousePeriodically();
+// Schedule the process to run every 10 minutes
+function startPeriodicExecution() {
+    console.log('Starting periodic Lighthouse execution...');
+    executeLighthouseProcess(); // Run immediately
+    setInterval(executeLighthouseProcess, 10 * 60 * 1000); // Run every 10 minutes
+}
+
+// Start the periodic execution
+startPeriodicExecution();

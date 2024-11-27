@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import moment from 'moment';
+import { getMetricsByUrlAndTimeRange } from './main.js';
 
 mongoose.connect('mongodb://localhost:27017/performanceDB', {});
 
@@ -24,66 +25,6 @@ const metricsSchema = new mongoose.Schema({
 
 // database instance for performance
 export const performanceMetrics = mongoose.model('Metrics', metricsSchema);
-
-// Returns given number of records from the database history
-export async function getMetricsByUrl(url, limit = 5) {
-    try {
-        const metricsHistory = await performanceMetrics.find({ url })
-            .sort({ collectedAt: -1 })
-            .limit(limit)   
-            .exec();
-
-        if (metricsHistory.length > 0) {
-            return metricsHistory;
-        } else {
-            return null;
-        }
-    } catch (error) {
-        console.error('Error retrieving metrics:', error);
-        return null;
-    } finally {
-        //mongoose.connection.close();  
-    }
-}
-
-// Returns records for the given time range
-export async function getMetricsByUrlAndTimeRange(url, timeRange) {
-    try {
-        let timeFilter = {};
-        switch (timeRange) {
-            case '1h':
-                timeFilter = { collectedAt: { $gte: moment().subtract(1, 'hours').toDate() } };
-                break;
-            case '24h':
-                timeFilter = { collectedAt: { $gte: moment().subtract(24, 'hours').toDate() } };
-                break;
-            case '1w':
-                timeFilter = { collectedAt: { $gte: moment().subtract(1, 'week').toDate() } };
-                break;
-            case '1m':
-                timeFilter = { collectedAt: { $gte: moment().subtract(1, 'month').toDate() } };
-                break;
-            default:
-                throw new Error('Invalid time range. Use "1h", "24h", "1w", or "1m".');
-        }
-
-        // Retrieve the metrics based on the time range
-        const metricsHistory = await performanceMetrics.find({ url, ...timeFilter })
-            .sort({ collectedAt: -1 })
-            .exec();
-
-        if (metricsHistory.length > 0) {
-            return metricsHistory;
-        } else {
-            return null;
-        }
-    } catch (error) {
-        console.error('Error retrieving metrics:', error);
-        return null;
-    } finally {
-        //mongoose.connection.close();
-    }
-}
 
 // Gets the 95th percentile load time # for UX analysis
 function getPercitileLoadTime (metrics) {
@@ -207,9 +148,9 @@ function getAverageRequests(metrics) {
 }
 
 // get results by time
-export async function ParseResults(url, time) {
+export async function ParsePerformanceResults(url, time, performanceMetrics) {
     if (time != 6) {
-        const metrics = await getMetricsByUrlAndTimeRange(url, time);
+        const metrics = await getMetricsByUrlAndTimeRange(url, time, performanceMetrics);
         if (metrics != null) {
             // page Load Time
             const PLTpercentile = getPercitileLoadTime(metrics);
@@ -244,7 +185,7 @@ export async function ParseResults(url, time) {
             }
         }
     } else {
-        const metrics = await getMetricsByUrl(url, 1) 
+        const metrics = await getMetricsByUrl(url, 1, performanceMetrics) 
         return {
             pageLoadTime: metrics[0].metrics.pageLoadTime,
             webVitals: metrics[0].metrics.webVitals,
@@ -256,8 +197,5 @@ export async function ParseResults(url, time) {
         
     }
 }
-
-const met = await ParseResults('https://example.com', 6);
-console.log(met);
 
 
