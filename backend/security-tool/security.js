@@ -1,7 +1,7 @@
 import ZapClient from 'zaproxy';
 import { Save, Security } from './model.js';
 
-const zapOptions = { apiKey: '9203935709', proxy: { host: 'localhost', port: 8081 }};
+const zapOptions = { apiKey: #####, proxy: { host: 'localhost', port: 8081 }};
 const zap = new ZapClient(zapOptions);
 
 export async function SecurityScan(targetUrl) {
