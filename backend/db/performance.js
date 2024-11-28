@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
-import moment from 'moment';
-import { getMetricsByUrlAndTimeRange } from './main.js';
+import { getMetricsByUrl, getMetricsByUrlAndTimeRange } from './main.js';
 
 mongoose.connect('mongodb://localhost:27017/performanceDB', {});
 
@@ -20,10 +19,14 @@ const metricsSchema = new mongoose.Schema({
         totalPageWeight: Number,
         httpRequests: Number,
     },
+    suggestions: { 
+        type: [Object], 
+        default: [], 
+    },
     collectedAt: { type: Date, default: Date.now }, 
 });
 
-// database instance for performance
+metricsSchema.index({ url: 1, collectedAt: -1 });
 export const performanceMetrics = mongoose.model('Metrics', metricsSchema);
 
 // Gets the 95th percentile load time # for UX analysis
@@ -148,9 +151,9 @@ function getAverageRequests(metrics) {
 }
 
 // get results by time
-export async function ParsePerformanceResults(url, time, performanceMetrics) {
+export async function ParsePerformanceResults(url, time, db=performanceMetrics) {
     if (time != 6) {
-        const metrics = await getMetricsByUrlAndTimeRange(url, time, performanceMetrics);
+        const metrics = await getMetricsByUrlAndTimeRange(url, time, db);
         if (metrics != null) {
             // page Load Time
             const PLTpercentile = getPercitileLoadTime(metrics);
@@ -197,5 +200,3 @@ export async function ParsePerformanceResults(url, time, performanceMetrics) {
         
     }
 }
-
-

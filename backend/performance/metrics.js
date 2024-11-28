@@ -28,6 +28,15 @@ async function runLighthouse(url, browser) {
         const runnerResult = await lighthouse(url, options);
         const audits = runnerResult.lhr.audits;
 
+        const suggestions = Object.values(audits)
+            .filter(audit => audit.score !== 1 && audit.details?.type === 'opportunity')
+            .map(audit => ({
+                title: audit.title,
+                description: audit.description,
+                score: audit.score ?? 'N/A',
+                estimatedSavings: audit.details.overallSavingsMs ?? 'N/A',
+            }));
+
         return {
             url,
             metrics: {
@@ -44,6 +53,7 @@ async function runLighthouse(url, browser) {
                 totalPageWeight: audits['total-byte-weight']?.numericValue ?? 'N/A',
                 httpRequests: audits['network-requests']?.details?.items?.length ?? 'N/A',
             },
+            suggestions: suggestions.length ? suggestions : [],
         };
     } catch (error) {
         console.error(`Error running Lighthouse for ${url}:`, error.message);

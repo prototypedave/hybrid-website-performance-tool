@@ -1,3 +1,6 @@
+import moment from 'moment';
+
+
 // Returns given number of records from the database history
 export async function getMetricsByUrl(url, limit = 5, db) {
     try {
@@ -57,3 +60,5 @@ export async function getMetricsByUrlAndTimeRange(url, timeRange, db) {
         //mongoose.connection.close();
     }
 }
+
+
