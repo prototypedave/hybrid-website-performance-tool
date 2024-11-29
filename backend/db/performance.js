@@ -1,8 +1,6 @@
 import mongoose from 'mongoose';
 import { getMetricsByUrl, getMetricsByUrlAndTimeRange } from './main.js';
 
-mongoose.connect('mongodb://localhost:27017/performanceDB', {});
-
 const metricsSchema = new mongoose.Schema({
     url: { type: String, required: true },
     metrics: {

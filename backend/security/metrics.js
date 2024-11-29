@@ -1,8 +1,7 @@
 import ZapClient from 'zaproxy';
 import dotenv from 'dotenv';
 import pLimit from 'p-limit';
-import { Alert, saveAlertsToMongo } from '../db/security.js';
-import { getMetricsByUrl } from '../db/main.js';
+import { saveAlertsToMongo } from '../db/security.js';
 
 dotenv.config();
 
@@ -40,20 +39,31 @@ async function performZapAttack(targetUrl) {
             description: alert.description,
             solution: alert.solution,
             reference: alert.reference,
+            evidence: alert.evidence,
         }));
-
+        writeLog(`Success - URL: ${url}, Time: ${new Date().toISOString()}`);
         return { url: targetUrl, alerts };
     } catch (error) {
         console.error(`Error scanning ${targetUrl}:`, error.message);
-        return null; // Skip to the next URL
+        writeLog(`Error - URL: ${url}, Time: ${new Date().toISOString()}, ${error.message}`);
+        return null; 
     }
 }
 
-// Concurrency Limit
-const limit = pLimit(5); // Adjust the concurrency level
+const limit = pLimit(5); 
 
-// Main function to process URLs
-async function processUrls(urls) {
+function writeLog(message) {
+    const logDir = path.join('backend', 'logs');
+    const logFile = path.join(logDir, 'securitylogs.log');
+    if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir);
+    }
+    const timestamp = new Date().toISOString();
+    const logMessage = `${timestamp} - ${message}\n`;
+    fs.appendFileSync(logFile, logMessage, 'utf8');
+}
+
+export async function processUrls(urls) {
     const tasks = urls.map(url =>
         limit(() => performZapAttack(url))
     );
@@ -67,17 +77,9 @@ async function processUrls(urls) {
     console.log('All scans completed.');
 }
 
-(async () => {
-    const urls = [
-        'https://example.com',
-        'https://google.com',
-        // Add more URLs here
-    ];
-    try {
-        await processUrls(urls);
-    } catch (error) {
-        console.error('Error during scanning process:', error);
-    } finally {
-        //mongoose.disconnect();
-    }
-})();
+export function startPeriodicExecutionSecurity(urls) {
+    processUrls(urls);
+    setInterval(() => {
+        processUrls(urls);
+    }, 20 * 60 * 1000); 
+}

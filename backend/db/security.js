@@ -1,8 +1,5 @@
 import mongoose from 'mongoose';
-import moment from 'moment';
-import { getMetricsByUrl } from './main.js';
-
-mongoose.connect('mongodb://localhost:27017/securityDB', {});
+import { getMetricsByUrl, getMetricsByUrlAndTimeRange } from './main.js';
 
 const alertSchema = new mongoose.Schema({
     url: { type: String, required: true },
@@ -15,10 +12,12 @@ const alertSchema = new mongoose.Schema({
             description: String,
             solution: String,
             reference: String,
+            evidence: String,
         },
     ],
-    timestamp: { type: Date, default: Date.now },
+    collectedAt: { type: Date, default: Date.now }, 
 });
+alertSchema.index({ url: 1, collectedAt: -1 });
 export const Alert = mongoose.model('Alert', alertSchema);
 
 export async function saveAlertsToMongo(bulkData) {
@@ -71,15 +70,15 @@ function getAverageVulnerabilityScore(metrics) {
 function getVulnerabilityByPercentage(metrics, AVG=false) {
     let vuln = AVG? getAverageVulnerabilityScore(metrics) : getVulnerabilityScore(metrics);
     
-    const sum = vuln.info + vuln.high + vuln.medium + vuln.low;
+    const sum = vuln.info.sum + vuln.high.sum + vuln.medium.sum + vuln.low.sum;
     // percentage
     vuln = {
-        info: (vuln.info / sum * 100),
-        high: (vuln.high / sum * 100),
-        medium: (vuln.medium / sum * 100),
-        low: (vuln.low / sum * 100)
+        info: (vuln.info.sum / sum * 100),
+        high: (vuln.high.sum / sum * 100),
+        medium: (vuln.medium.sum / sum * 100),
+        low: (vuln.low.sum / sum * 100)
     }
-    console.log(vuln);
+    return vuln;
     
 }
 
@@ -88,8 +87,8 @@ function getAlertsByName(metrics) {
     let alerts = {
         sql: {sum:0, alert:[]}, cross: {sum:0, alert:[]}, 
         forge: {sum:0, alert:[]}, expose: {sum:0, alert:[]}, 
-        headers: {sum:0, alert:[], other: []}
-    };
+        headers: {sum:0, alert:[]}, other: []
+    }
 
     for (let i = 0; i < metrics.length; i++) {
         for (let j = 0; j < metrics[i].alerts.length; j++) {
@@ -117,21 +116,65 @@ function getAlertsByName(metrics) {
     return alerts;
 }
 
+export function getSecurityScoreOverTime(metrics) {
+    let vulnList = [];
+    for (let i = 0; i < metrics.length; i++) {
+        let vuln = {info: 0, low: 0, high: 0, medium: 0};
+        for (let j = 0; j < metrics[i].alerts.length; j++) {
+            if (metrics[i].alerts[j].risk === "High") {
+                vuln.high += 1;
+            } else if (metrics[i].alerts[j].risk === "Medium") {
+                vuln.medium += 1;
+            } else if (metrics[i].alerts[j].risk === "Low") {
+                vuln.low += 1;
+            } else if (metrics[i].alerts[j].risk === "Informational") {
+                vuln.info += 1;
+            } else {
+                console.log(`Invalid Risk ${metrics[i].alerts[j].risk}`);
+            }
+        }
+        vulnList.push(vuln);
+    }
+    return vulnList;
+}
+
+export async function getLatestSuggestions(url, checks) {
+    const metrics = await getMetricsByUrl(url, 1, Alert);
+    const suggList = [];
+    if (metrics != null) {
+        for (let i = 0; i < metrics[0].alerts.length; i++) {
+            if (metrics[0].alerts[i].risk.includes(checks)) {
+                let sugg = {
+                    name: metrics[0].alerts[i].name, 
+                    desc: metrics[0].alerts[i].description,
+                    soln: metrics[0].alerts[i].solution, 
+                    ref: metrics[0].alerts[i].reference,
+                    evidence: metrics[0].alerts[i].reference
+                };
+                suggList.push(sugg);
+            }
+        }
+    }
+    return suggList;
+}
+
 // fetch security data
-export async function ParseSecurityResults(url, time, Alert) {
+export async function ParseSecurityResults(url, time, db=Alert) {
     if (time != 6) {
-        const metrics = await getMetricsByUrlAndTimeRange(url, time, Alert);
+        const metrics = await getMetricsByUrlAndTimeRange(url, time, db);
         if (metrics != null) {
             const vulnerabilityAssessment = getVulnerabilityByPercentage(metrics, true);
             const alertsByName = getAlertsByName(metrics);
+            const scores = getSecurityScoreOverTime(metrics);
             const security = {
                 vulnerability : vulnerabilityAssessment,
                 alertByName : alertsByName,
+                score : scores,
             }
             return security;
         }
     } else {
-        const metrics = await getMetricsByUrl(url, 1, Alert) 
+        const metrics = await getMetricsByUrl(url, 1, db) 
         if (metrics != null) {
             const vulnerabilityAssessment = getVulnerabilityByPercentage(metrics);
             const alertsByName = getAlertsByName(metrics);

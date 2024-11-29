@@ -1,20 +1,13 @@
-import { launch } from 'chrome-launcher';
 import lighthouse from 'lighthouse';
 import puppeteer from 'puppeteer';
-import pRetry from 'p-retry'; // Retry logic for failed URLs
-import { performanceMetrics } from '../db/performance.js'; // MongoDB model
+import pRetry from 'p-retry'; 
+import { performanceMetrics } from '../db/performance.js';
+import fs from 'fs';
+import path from 'path'; 
 
 // Constants
 const BATCH_SIZE = 100;
-const urls = [
-    'https://example.com',
-    'https://google.com',
-    'https://facebook.com',
-    'https://twitter.com',
-    'https://linkedin.com',
-];
 
-// Function to run Lighthouse on a single URL using a shared Chrome instance
 async function runLighthouse(url, browser) {
     const { port } = new URL(browser.wsEndpoint());
     const options = {
@@ -27,7 +20,6 @@ async function runLighthouse(url, browser) {
     try {
         const runnerResult = await lighthouse(url, options);
         const audits = runnerResult.lhr.audits;
-
         const suggestions = Object.values(audits)
             .filter(audit => audit.score !== 1 && audit.details?.type === 'opportunity')
             .map(audit => ({
@@ -36,7 +28,8 @@ async function runLighthouse(url, browser) {
                 score: audit.score ?? 'N/A',
                 estimatedSavings: audit.details.overallSavingsMs ?? 'N/A',
             }));
-
+        const successMessage = `Success - URL: ${url}, Time: ${new Date().toISOString()}`;
+        writeLog(successMessage);
         return {
             url,
             metrics: {
@@ -57,11 +50,11 @@ async function runLighthouse(url, browser) {
         };
     } catch (error) {
         console.error(`Error running Lighthouse for ${url}:`, error.message);
-        throw error; // Rethrow for retry logic
+        writeLog(`Error - URL: ${url}, Time: ${new Date().toISOString()}, ${error.message}`);
+        throw error; 
     }
 }
 
-// Function to process URLs sequentially (one at a time)
 async function processUrlsSequentially(urls, browser) {
     const results = [];
     for (const url of urls) {
@@ -80,10 +73,9 @@ async function processUrlsSequentially(urls, browser) {
     return results;
 }
 
-// Function to save metrics to MongoDB in batches
 async function saveMetricsToDb(metricsBatch) {
     try {
-        await performanceMetrics.insertMany(metricsBatch, { ordered: false }); // Bulk insert
+        await performanceMetrics.insertMany(metricsBatch, { ordered: false }); 
         console.log(`Saved ${metricsBatch.length} metrics to MongoDB.`);
     } catch (error) {
         console.error(`Error saving metrics to MongoDB:`, error.message);
@@ -91,33 +83,41 @@ async function saveMetricsToDb(metricsBatch) {
 }
 
 // Function to execute Lighthouse runs and save results
-async function executeLighthouseProcess() {
-    const browser = await puppeteer.launch({ headless: true }); // Shared Chrome instance
-
+async function executeLighthouseProcess(urls) {
+    const browser = await puppeteer.launch({ headless: true }); 
     try {
-        console.log('Starting Lighthouse process...');
         for (let i = 0; i < urls.length; i += BATCH_SIZE) {
-            const batchUrls = urls.slice(i, i + BATCH_SIZE); // Process in batches
+            const batchUrls = urls.slice(i, i + BATCH_SIZE);
             console.log(`Processing batch ${i / BATCH_SIZE + 1} (${batchUrls.length} URLs)...`);
 
-            const metrics = await processUrlsSequentially(batchUrls, browser); // Process URLs one at a time in batch
-            await saveMetricsToDb(metrics); // Save results to MongoDB
+            const metrics = await processUrlsSequentially(batchUrls, browser); 
+            await saveMetricsToDb(metrics); 
         }
 
         console.log('All URLs processed successfully.');
     } catch (error) {
         console.error('Error during processing:', error.message);
     } finally {
-        await browser.close(); // Close shared Chrome instance
+        await browser.close(); 
     }
 }
 
-// Schedule the process to run every 10 minutes
-function startPeriodicExecution() {
-    console.log('Starting periodic Lighthouse execution...');
-    executeLighthouseProcess(); // Run immediately
-    setInterval(executeLighthouseProcess, 10 * 60 * 1000); // Run every 10 minutes
+function writeLog(message) {
+    const logDir = path.join('backend', 'logs');
+    const logFile = path.join(logDir, 'performancelogs.log');
+    if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir);
+    }
+    const timestamp = new Date().toISOString();
+    const logMessage = `${timestamp} - ${message}\n`;
+    fs.appendFileSync(logFile, logMessage, 'utf8');
 }
 
-// Start the periodic execution
-startPeriodicExecution();
+// Schedule the process to run every 10 minutes
+export function startPeriodicExecution(urls) {
+    executeLighthouseProcess(urls);
+    setInterval(() => {
+        executeLighthouseProcess(urls);
+    }, 10 * 60 * 1000); 
+}
+
